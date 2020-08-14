@@ -2,6 +2,9 @@ library(dplyr)
 library(ggplot2)
 library(modelr)
 library(EnvStats)
+library(corrplot)
+library(shiny)
+library(car)
 #set your wd
 setwd('C:/Users/nates/Documents/Projects/KaggleAmesIowaCompetition')
 
@@ -11,13 +14,47 @@ train_df = read.csv("train.csv", header = TRUE, stringsAsFactors = FALSE)
 #check missing values 
 colSums(is.na(train_df) == TRUE)
 
-#missing values in LotFrontage, MasVnrType, MasVnrArea, Electrical
+#Missingness Imputation and Relabeling
 #Replace NA's in LotFrontage with 0's
 #https://www.kaggle.com/c/house-prices-advanced-regression-techniques/discussion/97087
 train_df$LotFrontage[is.na(train_df$LotFrontage)] = 0
 
-#impute mean in MasVnrArea
-train_df$MasVnrArea[is.na(train_df$MasVnrArea)] = mean(train_df$MasVnrArea, na.rm = TRUE)
+#replace NA's in GarageYrBlt with the year the home was built
+train_df$GarageYrBlt[which(is.na(train_df$GarageYrBlt) == TRUE)] = train_df$YearBuilt[which(is.na(train_df$GarageYrBlt) == TRUE)]
+
+#Replace NA's with None in Categorical Values where NA indicates that the feature(wc?) is missing (no basement, etc)
+train_df[c("Alley","BsmtQual", "BsmtCond", 
+           "BsmtExposure", "BsmtFinType1",
+           "BsmtFinType2","KitchenQual", "FireplaceQu",
+           "GarageType", "GarageFinish",
+           "GarageQual", "GarageCond",
+           "PoolQC", "Fence", "MiscFeature")][is.na(train_df[c("Alley","BsmtQual", "BsmtCond", 
+                 "BsmtExposure", "BsmtFinType1",
+                 "BsmtFinType2","KitchenQual", "FireplaceQu",
+                 "GarageType", "GarageFinish",
+                 "GarageQual", "GarageCond",
+                 "PoolQC", "Fence", "MiscFeature")])] <- "None"
+#Assign most common value to NA in electrical
+train_df %>%
+  ggplot(aes(x = Electrical)) + geom_bar()
+
+train_df$Electrical[is.na(train_df$Electrical)] = "SBrkr"
+
+#Rescore nominal categorical values as numerical
+must_convert = c("ExterQual","ExterCond", "BsmtQual", "BsmtCond",
+                "BsmtExposure", "BsmtFinType1",
+                "BsmtFinType2", "FireplaceQu", "GarageQual",
+                "GarageCond", "PoolQC")
+train_df[must_convert][train_df[must_convert] == "None"] <- "0"
+train_df[must_convert][train_df[must_convert] == "Po"] <- "1"
+train_df[must_convert][train_df[must_convert] == "Fa"] <- "2"
+train_df[must_convert][train_df[must_convert] == "TA"] <- "3"
+train_df[must_convert][train_df[must_convert] == "Gd"] <- "4"
+train_df[must_convert][train_df[must_convert] == "Ex"] <- "5"
+
+#Visualize MasVnrArea. Data is highly skewed, so impute median
+#ggplot(data = train_df,aes(x = MasVnrArea)) + geom_histogram() + xlim(0,500)
+train_df$MasVnrArea[is.na(train_df$MasVnrArea)] = median(train_df$MasVnrArea, na.rm = TRUE)
 
 #generate random distribution for MasVnrType
 set.seed(0)
@@ -28,66 +65,69 @@ train_df$MasVnrType[grep(2, train_df$MasVnrType)] = "CBlock"
 train_df$MasVnrType[grep(3, train_df$MasVnrType)] = "None"
 train_df$MasVnrType[grep(4, train_df$MasVnrType)] = "Stone"
 
-#create numerical score for ExterQual value. Yes, RStudio's autoformat is a little ideosyncratic
-train_df = train_df %>% mutate(ExterQualScore = ifelse(ExterQual == "Po",
-                                            0,
-                                            ifelse(
-                                              ExterQual == "Fa",
-                                              1,
-                                              ifelse(ExterQual == "TA",
-                                                     2,
-                                                     ifelse(
-                                                       ExterQual == "Gd",
-                                                       3,
-                                                       ifelse(ExterQual == "Ex",
-                                                              4,
-                                                              ExterQual)
-                                                     ))
-                                            )))
-
-#create numerical score for BsmtQual value. Yes, RStudio's autoformat is a little ideosyncratic
-train_df = train_df %>% mutate(ExterCondScore = ifelse(ExterCond == "Po",
-                                                       0,
-                                                       ifelse(
-                                                         ExterCond == "Fa",
-                                                         1,
-                                                         ifelse(ExterCond == "TA",
-                                                                2,
-                                                                ifelse(
-                                                                  ExterCond == "Gd",
-                                                                  3,
-                                                                  ifelse(ExterCond == "Ex",
-                                                                         4,
-                                                                         ExterCond)
-                                                                ))
-                                                       )))
-
-#create numerical score for BsmtQual value. Yes, RStudio's autoformat is a little ideosyncratic
-train_df = train_df %>% mutate(BsmtQualScore = ifelse(BsmtQual == "Po",
-                                                       0,
-                                                       ifelse(
-                                                         BsmtQual == "Fa",
-                                                         1,
-                                                         ifelse(BsmtQual == "TA",
-                                                                2,
-                                                                ifelse(
-                                                                  BsmtQual == "Gd",
-                                                                  3,
-                                                                  ifelse(BsmtQual == "Ex",
-                                                                         4,
-                                                                         BsmtQual)
-                                                                ))
-                                                       )))
+#Is sale month related to sale price?Not really...
 train_df %>%
-  ggplot(aes(x = SalePrice)) + geom_boxplot()
+  ggplot(aes(x = MoSold)) + geom_bar()
 
+train_df %>%
+  ggplot(aes(x = MoSold, y = SalePrice)) + geom_smooth(method = "loess") +
+  geom_point() 
+
+#mean price over time
+train_df %>%
+  ggplot(aes(x = YrSold, y = SalePrice)) + geom_smooth(method = "loess") +
+  geom_point(position = "jitter", aes(color = Neighborhood)) +
+  facet_wrap( ~ Neighborhood)
+
+train_df %>%
+  ggplot(aes(x = SalePrice)) + geom_histogram() + 
+  facet_wrap( ~ Neighborhood)
+
+
+#Yearbuilt has an interesting relationship with GarageYrBlt.
+#Their mean difference is 5.24 years
+#Built, when you eliminate cases in which YearBuilt == GarageYrBlt
+#Their mean difference jumps to ~ 26 years
+train_df %>%
+  ggplot(aes(x = GarageYrBlt - YearBuilt)) + geom_histogram() + 
+  xlim(1,120)
+
+train_df %>%
+  filter(GarageYrBlt != YearBuilt) %>%
+  summarise(mean(GarageYrBlt - YearBuilt))
+
+
+#Colinearity Check
+cors = data.frame(train_df %>%
+  select_if(is.numeric)%>%
+  #select(LotFrontage, LotArea, OverallQual, OverallCond, YearBuilt, YearRemodAdd, 
+      #   MasVnrArea, GarageArea, SalePrice) %>%
+  cor()) 
+
+train_df %>%
+  select_if(is.numeric) %>%
+  influencePlot()
+
+cors = cors %>%
+  arrange(SalePrice, desc()) 
+
+corrplot(train_df %>%
+           select_if(is.numeric)%>%
+           cor()>.7, order="hclust")
+#Output cors to model
+
+
+#Output train data for Advanced Models ()
 write.csv(train_df, file = 'post_process_train.csv')
+
+
+
+
+
+
+
 #co-linearity check
-train_df %>%
-  select(LotFrontage, LotArea, OverallQual, OverallCond, YearBuilt, YearRemodAdd, 
-         MasVnrArea, GarageArea, SalePrice) %>%
-  #influencePlot()
-  cor()
+
 
 ggplot(data = train_df, aes(x = boxcox(SalePrice))) + geom_histogram()
 
