@@ -65,6 +65,12 @@ train_df$MasVnrType[grep(2, train_df$MasVnrType)] = "CBlock"
 train_df$MasVnrType[grep(3, train_df$MasVnrType)] = "None"
 train_df$MasVnrType[grep(4, train_df$MasVnrType)] = "Stone"
 
+#Remove Outliers from GrLvArea
+train_df = train_df%>%
+  filter(GrLivArea < 3000)
+
+
+
 #Is sale month related to sale price?Not really...
 train_df %>%
   ggplot(aes(x = MoSold)) + geom_bar()
@@ -114,9 +120,56 @@ cors = cors %>%
 corrplot(train_df %>%
            select_if(is.numeric)%>%
            cor()>.7, order="hclust")
-#Output cors to model
 
+#Garage Area and Garage Cars are highly correlated
+#Garage Cars looks a lot more normally distributed, so we'll try eliminating Garage Area
+train_df%>%
+  ggplot(aes(x = GarageCars)) + geom_histogram()
 
+#Garage Cars and GarageYrBlt are also highly correlated (.6>)
+#Garage cars still his a higher correlation with sale price, so we'll try removing GarageYrBlt
+train_df %>%
+  ggplot(aes(y= GarageCars, x = GarageYrBlt)) + 
+  geom_point(position = "jitter") + 
+  geom_smooth()
+
+#Full Bath is correlated with GrLivArea (.6>), but not highly correlated w/ sale price
+#It also has some logy bumps at around 1300 and 2300 SF
+#We'll remove FullBath for now
+train_df %>%
+  ggplot(aes(x= GrLivArea, y = FullBath)) + 
+  geom_point(position = "jitter") + 
+  geom_smooth()
+
+#GrLivArea and TotRmsAbvGrd are pretty correlated.
+#GrLivArea is more highly correlated with SalePrice
+#BUT, it's got more skew
+#So we'll eliminate TotRmsAbvGrd AND we'll get rid of some outliers from GrLivArea
+train_df %>%
+  ggplot(aes(x= GrLivArea)) + 
+  geom_histogram()
+
+train_df %>%
+  ggplot(aes(x= GrLivArea, y = TotRmsAbvGrd)) + 
+  geom_point(position = "jitter") + 
+  geom_smooth()
+
+#Also remove X2ndFlrSF and BsmtFullBath for similar reasons
+train_df %>%
+  ggplot(aes(x= BsmtFullBath)) + 
+  geom_histogram()
+
+train_df %>%
+  ggplot(aes(x= BsmtFinSF1, y =BsmtFullBath )) + 
+  geom_point(position = "jitter") + 
+  geom_smooth()
+
+#
+train_df %>%
+  ggplot(aes(x = Neighborhood, y = SalePrice)) + geom_boxplot()
+
+train_df%>%
+  ggplot(aes(x= Neighborhood)) + geom_bar() #+ ylim(30, 300)
 #Output train data for Advanced Models ()
 write.csv(train_df, file = 'post_process_train.csv')
 
