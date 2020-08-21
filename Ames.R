@@ -18,9 +18,13 @@ colnames(missing_df) = c("Vars")
 rownames = c(rownames(missing_df))
 missing_df = cbind(missing_df,rownames)
 missing_df %>%
-  filter(Vars != 0)%>%
+  filter(Vars != 0, Vars >.05)%>%
   ggplot(aes(x = reorder(rownames, -Vars) , y =Vars )) + 
-  geom_bar(stat="identity")
+  geom_bar(stat="identity") + ylab("NA Proportion") +
+  scale_x_discrete(guide = guide_axis(check.overlap = TRUE))
+  scale_x_discrete(guide = guide_axis(n.dodge=3))
+  
+  
 #The columns that have a high proportion of missing variables seem
 #to be ones where NA indicates 0, so we won't really drop them
 
@@ -63,7 +67,7 @@ train_df$MasVnrType[grep(3, train_df$MasVnrType)] = "None"
 train_df$MasVnrType[grep(4, train_df$MasVnrType)] = "Stone"
 
 #Visualize MasVnrArea. Data is highly skewed, so impute median
-ggplot(data = train_df,aes(x = MasVnrArea)) + geom_histogram() #+ xlim(0,500)
+ggplot(data = train_df,aes(x = MasVnrArea)) + geom_histogram() + xlim(1,500)
 train_df$MasVnrArea[is.na(train_df$MasVnrArea)] = if_else(train_df$MasVnrType == 'None', 0, median(train_df$MasVnrArea, na.rm = TRUE))
 
 #Remove odd cases where MasVnrType is listed as none, but MasVnrArea isn't zero
@@ -73,10 +77,6 @@ train_df %>%
 
 train_df = train_df %>%
   filter(Id !=625, Id != 774, Id != 1231, Id!=1301, Id!=1335)
-
-train_df = train_df %>%
-  filter(Id!=186 & Id!=1183& Id!=1170 & Id!=692 & Neighborhood!= "Blueste" &
-           Neighborhood!= "NPkVill" & Neighborhood != "Veenker") 
 
 #Rescore nominal categorical values as numerical
 must_convert = c("ExterQual","ExterCond", "BsmtQual", "BsmtCond",
@@ -97,14 +97,16 @@ train_df["BsmtExposure"][train_df["BsmtExposure"] == "Mn"] <- "2"
 train_df["BsmtExposure"][train_df["BsmtExposure"] == "Av"] <- "3"
 train_df["BsmtExposure"][train_df["BsmtExposure"] == "Gd"] <- "4"
 
-
 #Outlier scrub
 
 #OverallQual
 train_df %>%
   ggplot(aes(x = OverallQual, y = SalePrice)) + geom_point(position = "jitter") 
 
-#Remove Outliers from GrLvArea
+#Remove Outliers from GrLivArea
+train_df %>%
+  ggplot(aes(x = GrLivArea, y = SalePrice)) + geom_point(position = "jitter") 
+
 train_df = train_df%>%
   filter(GrLivArea < 3000)
 
@@ -114,9 +116,10 @@ train_df %>%
 
 #mean price over time by neighborhood
 train_df %>%
+  #filter(Neighborhood == "Veenker") %>%
   ggplot(aes(x = YrSold, y = SalePrice)) + geom_smooth(method = "loess") +
-  geom_point(position = "jitter", aes(color = Neighborhood)) #+
-# facet_wrap( ~ Neighborhood)
+  geom_point(position = "jitter", aes(color = Neighborhood)) + xlim(2006, 2010) +
+  ylim(150000, 600000) + theme(legend.position="none") + facet_wrap( ~ Neighborhood)
 
 train_df %>%
   ggplot(aes(x = SalePrice)) + geom_histogram() + 
@@ -146,11 +149,11 @@ train_df %>%
   influencePlot()
 
 cors = cors %>%
-  arrange(descSalePrice) 
+  arrange(desc(SalePrice)) 
 
 corrplot(train_df %>%
            select_if(is.numeric)%>%
-           cor()>.7, order="hclust")
+           cor(), order="hclust")
 
 #Garage Area and Garage Cars are highly correlated
 #Garage Cars looks a lot more normally distributed, so we'll try eliminating Garage Area
@@ -200,7 +203,7 @@ train_df %>%
 #Remove MSZoning for now since it has less variance than Neighborhood
 
 train_df%>%
-  ggplot(aes(y=MSZoning)) + geom_bar() #+ facet_wrap(~Neighborhood)
+  ggplot(aes(y=MSZoning)) + geom_bar() + facet_wrap(~Neighborhood)
 
 train_df%>%
   ggplot(aes(y=SalePrice, x= Neighborhood, col=MSZoning)) + geom_point(position = "jitter")
@@ -251,7 +254,7 @@ variances = sapply(train_df, var)
 which(variances <= 1)
 
 #
-Anova(train_df)
+
 
 ggplot(data = train_df, aes(x = boxcox(SalePrice))) + geom_histogram()
 
